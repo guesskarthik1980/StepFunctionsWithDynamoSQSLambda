@@ -1,0 +1,83 @@
+{
+    "Comment":"The step function processes the cc, saves the information to DynamoDB and then send to SQS for further notification",
+    "StartAt": "ccProcessing" ,
+    "States":{
+        "ccProcessing":{
+            "Comment": "Main function for decision making whether the input is refund type or purchase",
+            "Type":"Choice",
+            "Choices":[
+                {
+                    "Variable" : "$.TransactionType",
+                    "StringEquals": "REFUND",
+                    "Next":"ProcessRefund"
+                },
+                {
+                    "Variable":"$.TransactionType",
+                    "StringEquals":"PURCHASE",
+                    "Next":"ProcessPurchase"
+                }
+            ]
+        },
+        "ProcessRefund":{
+            "Type":"Task",
+            "Resource":"ARN of REFUND LAMBDA FUNCTION",
+            "Next": "Wait 3 Sec"
+        },
+        "ProcessPurchase":{
+            "Type":"Task",
+            "Resource":"ARN of Purchase Lambda function",
+            "Next": "Wait 3 sec"
+        },
+        "Wait 3 sec":{
+            "Type":"Wait",
+            "Seconds" :3,
+            "Next":"Parallel Process"
+        },
+        "Parallel Process":{
+            "Type":"Parallel",
+            "Next":"Finish",
+            "Branches":[
+                {
+                    "StartAt":"DB",
+                    "States":{
+                        "Type":"Task",
+                        "Resource":"arn:aws:states:::dynamodb:putItem",
+                        "Parameters":{
+                            "TableName":"TransactionHistory",
+                            "Item":{
+                                "TransactionId.$":"$.body.TransactionId",
+                                "CardType.$":"$.body.CardType",
+                                "Amount.$":"$.body.Amount",
+                                "TransactionDate.$":"$.body.TransactionDate",
+                                "TransactionType.$":"$.body.TransactionType"
+                            }
+                        },
+                        "Next":"Finish"
+                    }
+                },
+                {
+                    "StartAt":"SQS",
+                    "States":{
+                        "Type":"Task",
+                        "Resource":"arn:aws:states:::sqs:sendMessage",
+                        "Parameters":{
+                            "QueueUrl":"ARN of the SQS Queue url",
+                            "Messagebody":{
+                                "TransactionId.$":"$.body.TransactionId",
+                                "CardType.$":"$.body.CardType",
+                                "Amount.$":"$.body.Amount",
+                                "TransactionDate.$":"$.body.TransactionDate",
+                                "TransactionType.$":"$.body.TransactionType"
+                            }
+                        },
+                        "Next":"Finish"
+                    }
+                }
+            ]
+        },
+        "Finish":{
+            "Type":"Pass",
+            "End":true
+        }
+    }
+}
